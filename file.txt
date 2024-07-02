@@ -1,0 +1,479 @@
+import os
+
+class PyDBUtils:
+    def __init__(self):
+        self.words = {
+            "PyDBUtils": self.create_file,
+            # Добавьте сюда другие слова и код
+        }
+
+    def get_code(self, word):
+        func = self.words.get(word, None)
+        if func:
+            func()
+
+    def create_file(self):
+        code = """
+import pyodbc
+
+def test_db_connection():
+    server = '192.168.1.233'
+    database = 'demo_wibe'
+    username = 'admin'
+    password = '123456'
+    
+    try:
+        conn = pyodbc.connect(
+            f'DRIVER={{SQL Server}};'
+            f'SERVER={server};'
+            f'DATABASE={database};'
+            f'UID={username};'
+            f'PWD={password};'
+        )
+        print("Успешное подключение к базе данных!")
+        conn.close()
+    except Exception as e:
+        print(f"Ошибка при подключении к базе данных: {str(e)}")
+
+# Вызов функции для проверки подключения
+test_db_connection()
+
+
+
+-------------------------------------
+
+
+-- Создание базы данных
+CREATE DATABASE RepairRequestsDB;
+GO
+
+-- Использование созданной базы данных
+USE RepairRequestsDB;
+GO
+
+-- Создание таблицы пользователей
+CREATE TABLE Users (
+    UserID INT PRIMARY KEY IDENTITY(1,1),
+    Username NVARCHAR(50) NOT NULL,
+    Password NVARCHAR(50) NOT NULL,
+    Role NVARCHAR(50) NOT NULL
+);
+GO
+
+-- Создание таблицы заявок
+CREATE TABLE Requests (
+    RequestID INT PRIMARY KEY IDENTITY(1,1),
+    DateAdded DATETIME DEFAULT GETDATE(),
+    EquipmentType NVARCHAR(100),
+    Model NVARCHAR(100),
+    ProblemDescription NVARCHAR(255),
+    ClientName NVARCHAR(100),
+    PhoneNumber NVARCHAR(20),
+    Status NVARCHAR(50),
+);
+GO
+
+-- Вставка тестовых пользователей
+INSERT INTO Users (Username, Password, Role) VALUES
+('client1', 'password1', 'Client'),
+('master1', 'password2', 'Master'),
+('manager1', 'password3', 'Manager'),
+('admin1', 'password4', 'Admin');
+GO
+
+-- Вставка тестовой заявки
+INSERT INTO Requests (EquipmentType, Model, ProblemDescription, ClientName, PhoneNumber, Status) VALUES
+('Printer', 'HP LaserJet P1102', 'Не печатает', 'Иван Иванов', '1234567890', 'Новая заявка');
+GO
+
+
+---------------------------------------------------
+
+
+conn = pyodbc.connect(
+    'DRIVER={SQL Server};'
+    'SERVER=192.168.1.233;'
+    'DATABASE=demo_wibe;'
+    'UID=admin;'
+    'PWD=123456;'
+)
+
+
+import tkinter as tk
+from tkinter import messagebox, ttk
+import pyodbc
+from datetime import datetime
+
+# Подключение к базе данных
+conn = pyodbc.connect(
+    'DRIVER={SQL Server};'
+    'SERVER=DWASHERE\SQLEXPRESS;'  # Замените на имя вашего сервера
+    'DATABASE=RepairRequestsDB;'
+    'Trusted_Connection=yes;'
+)
+
+current_user_role = None
+
+# Цветовая палитра (измените значения для изменения темы)
+bg_color = "#f0f0f0"
+label_bg_color = "#d9d9d9"
+entry_bg_color = "#ffffff"
+button_bg_color = "#4caf50"
+button_fg_color = "#ffffff"
+
+def login():
+    global current_user_role
+    username = entry_username.get()
+    password = entry_password.get()
+    cursor = conn.cursor()
+    cursor.execute('SELECT Role FROM Users WHERE Username=? AND Password=?', (username, password))
+    user = cursor.fetchone()
+    if user:
+        current_user_role = user[0]
+        messagebox.showinfo("Успех", f"Добро пожаловать, {current_user_role}")
+        login_window.destroy()
+        main_window()
+    else:
+        messagebox.showerror("Ошибка", "Неправильное имя пользователя или пароль")
+
+def main_window():
+    root = tk.Tk()
+    root.title("Учет заявок на ремонт оргтехники")
+    root.configure(bg=bg_color)
+
+    def add_request():
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO Requests (EquipmentType, Model, ProblemDescription, ClientName, PhoneNumber, Status)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (entry_equipment_type.get(), entry_model.get(), entry_problem_description.get(), entry_client_name.get(), entry_phone_number.get(), 'Новая заявка'))
+        conn.commit()
+        messagebox.showinfo("Успех", "Заявка добавлена")
+        clear_entries()
+        load_requests()
+
+    def accept_request():
+        if current_user_role not in ['Master', 'Manager', 'Admin']:
+            messagebox.showerror("Ошибка", "У вас нет прав для выполнения этого действия")
+            return
+        request_id = entry_request_id.get()
+        cursor = conn.cursor()
+        cursor.execute('UPDATE Requests SET Status=? WHERE RequestID=?', ('В процессе ремонта', request_id))
+        conn.commit()
+        messagebox.showinfo("Успех", "Заявка принята")
+        load_requests()
+
+    def reject_request():
+        if current_user_role not in ['Master', 'Manager', 'Admin']:
+            messagebox.showerror("Ошибка", "У вас нет прав для выполнения этого действия")
+            return
+        request_id = entry_request_id.get()
+        cursor = conn.cursor()
+        cursor.execute('UPDATE Requests SET Status=? WHERE RequestID=?', ('Отклонена', request_id))
+        conn.commit()
+        messagebox.showinfo("Успех", "Заявка отклонена")
+        load_requests()
+
+    def edit_request():
+        if current_user_role not in ['Manager', 'Admin']:
+            messagebox.showerror("Ошибка", "У вас нет прав для выполнения этого действия")
+            return
+        request_id = entry_request_id.get()
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE Requests
+            SET ProblemDescription = ?, Status = ?, ResponsibleMaster = ?
+            WHERE RequestID = ?
+        ''', (entry_problem_description.get(), entry_status.get(), entry_responsible_master.get(), request_id))
+        conn.commit()
+        messagebox.showinfo("Успех", "Заявка отредактирована")
+        clear_entries()
+        load_requests()
+
+    def delete_request():
+        if current_user_role not in ['Manager', 'Admin']:
+            messagebox.showerror("Ошибка", "У вас нет прав для выполнения этого действия")
+            return
+        request_id = entry_request_id.get()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM Requests WHERE RequestID=?', (request_id,))
+        conn.commit()
+        messagebox.showinfo("Успех", "Заявка удалена")
+        clear_entries()
+        load_requests()
+
+    def change_status():
+        if current_user_role not in ['Manager', 'Admin']:
+            messagebox.showerror("Ошибка", "У вас нет прав для выполнения этого действия")
+            return
+        request_id = entry_request_id.get()
+        new_status = entry_status.get()
+        cursor = conn.cursor()
+        cursor.execute('UPDATE Requests SET Status=? WHERE RequestID=?', (new_status, request_id))
+        conn.commit()
+        messagebox.showinfo("Успех", "Статус заявки изменен")
+        clear_entries()
+        load_requests()
+
+    def refresh_page():
+        load_requests()
+
+    def clear_entries():
+        entry_equipment_type.delete(0, tk.END)
+        entry_model.delete(0, tk.END)
+        entry_problem_description.delete(0, tk.END)
+        entry_client_name.delete(0, tk.END)
+        entry_phone_number.delete(0, tk.END)
+        entry_request_id.delete(0, tk.END)
+        entry_status.delete(0, tk.END)
+        entry_responsible_master.delete(0, tk.END)
+
+    def load_requests():
+        cursor = conn.cursor()
+        cursor.execute('SELECT RequestID, DateAdded, EquipmentType, Model, ProblemDescription, ClientName, PhoneNumber, Status FROM Requests')
+        rows = cursor.fetchall()
+        for row in tree.get_children():
+            tree.delete(row)
+        for row in rows:
+            row_data = list(row)
+            row_data[1] = row_data[1].strftime("%Y-%m-%d %H:%M:%S")
+            tree.insert("", tk.END, values=row_data)
+
+    # Поля для ввода данных
+    input_frame = tk.Frame(root, bg=bg_color)
+    input_frame.grid(row=0, column=0, padx=10, pady=10)
+
+    button_frame = tk.Frame(root, bg=bg_color)
+    button_frame.grid(row=0, column=1, padx=10, pady=10)
+
+    if current_user_role == 'Client' or current_user_role == 'Admin':
+        tk.Label(input_frame, text="Вид оргтехники", bg=label_bg_color).grid(row=0, column=0, padx=5, pady=5, sticky='e')
+        entry_equipment_type = tk.Entry(input_frame, bg=entry_bg_color)
+        entry_equipment_type.grid(row=0, column=1, padx=5, pady=5)
+
+        tk.Label(input_frame, text="Модель", bg=label_bg_color).grid(row=1, column=0, padx=5, pady=5, sticky='e')
+        entry_model = tk.Entry(input_frame, bg=entry_bg_color)
+        entry_model.grid(row=1, column=1, padx=5, pady=5)
+
+        tk.Label(input_frame, text="Описание проблемы", bg=label_bg_color).grid(row=2, column=0, padx=5, pady=5, sticky='e')
+        entry_problem_description = tk.Entry(input_frame, bg=entry_bg_color)
+        entry_problem_description.grid(row=2, column=1, padx=5, pady=5)
+
+        tk.Label(input_frame, text="ФИО клиента", bg=label_bg_color).grid(row=3, column=0, padx=5, pady=5, sticky='e')
+        entry_client_name = tk.Entry(input_frame, bg=entry_bg_color)
+        entry_client_name.grid(row=3, column=1, padx=5, pady=5)
+
+        tk.Label(input_frame, text="Номер телефона", bg=label_bg_color).grid(row=4, column=0, padx=5, pady=5, sticky='e')
+        entry_phone_number = tk.Entry(input_frame, bg=entry_bg_color)
+        entry_phone_number.grid(row=4, column=1, padx=5, pady=5)
+
+        btn_add_request = tk.Button(button_frame, text="Добавить заявку", command=add_request, bg=button_bg_color, fg=button_fg_color)
+        btn_add_request.grid(row=5, column=0, padx=5, pady=5)
+
+    tk.Label(input_frame, text="Номер заявки", bg=label_bg_color).grid(row=6, column=0, padx=5, pady=5, sticky='e')
+    entry_request_id = tk.Entry(input_frame, bg=entry_bg_color)
+    entry_request_id.grid(row=6, column=1, padx=5, pady=5)
+
+    if current_user_role in ['Manager', 'Admin']:
+        tk.Label(input_frame, text="Статус", bg=label_bg_color).grid(row=7, column=0, padx=5, pady=5, sticky='e')
+        entry_status = tk.Entry(input_frame, bg=entry_bg_color)
+        entry_status.grid(row=7, column=1, padx=5, pady=5)
+
+        btn_delete_request = tk.Button(button_frame, text="Удалить заявку", command=delete_request, bg=button_bg_color, fg=button_fg_color)
+        btn_delete_request.grid(row=10, column=0, padx=5, pady=5)
+
+        btn_change_status = tk.Button(button_frame, text="Изменить статус", command=change_status, bg=button_bg_color, fg=button_fg_color)
+        btn_change_status.grid(row=11, column=0, padx=5, pady=5)
+
+    if current_user_role in ['Master', 'Manager', 'Admin']:
+        btn_accept_request = tk.Button(button_frame, text="Принять заявку", command=accept_request, bg=button_bg_color, fg=button_fg_color)
+        btn_accept_request.grid(row=12, column=0, padx=5, pady=5)
+
+        btn_reject_request = tk.Button(button_frame, text="Отклонить заявку", command=reject_request, bg=button_bg_color, fg=button_fg_color)
+        btn_reject_request.grid(row=13, column=0, padx=5, pady=5)
+
+    btn_refresh_page = tk.Button(button_frame, text="Обновить", command=refresh_page, bg=button_bg_color, fg=button_fg_color)
+    btn_refresh_page.grid(row=14, column=0, padx=5, pady=5)
+
+    # Создание таблицы для отображения заявок
+    columns = ("RequestID", "DateAdded", "EquipmentType", "Model", "ProblemDescription", "ClientName", "PhoneNumber", "Status")
+    tree = ttk.Treeview(root, columns=columns, show='headings')
+    tree.grid(row=1, column=0, columnspan=2, padx=10, pady=10)
+
+    for col in columns:
+        tree.heading(col, text=col)
+        tree.column(col, width=150)
+
+    load_requests()
+    root.mainloop()
+
+# Создание окна входа
+login_window = tk.Tk()
+login_window.title("Авторизация")
+login_window.configure(bg=bg_color)
+
+tk.Label(login_window, text="Имя пользователя", bg=label_bg_color).grid(row=0, column=0, padx=5, pady=5)
+entry_username = tk.Entry(login_window, bg=entry_bg_color)
+entry_username.grid(row=0, column=1, padx=5, pady=5)
+
+tk.Label(login_window, text="Пароль", bg=label_bg_color).grid(row=1, column=0, padx=5, pady=5)
+entry_password = tk.Entry(login_window, show='*', bg=entry_bg_color)
+entry_password.grid(row=1, column=1, padx=5, pady=5)
+
+btn_login = tk.Button(login_window, text="Войти", command=login, bg=button_bg_color, fg=button_fg_color)
+btn_login.grid(row=2, column=0, columnspan=2, padx=5, pady=5)
+
+login_window.mainloop()
+
+
+---------------------------------------------------
+
+
+### Руководство пользователя
+
+#### Введение
+Добро пожаловать в систему управления заявками на ремонт оргтехники! Эта система позволяет клиентам создавать заявки, мастерам - принимать или отклонять заявки, менеджерам - изменять статусы заявок и назначать ответственных мастеров, а администраторам - выполнять все действия.
+
+#### Авторизация
+1. **Запуск приложения**:
+   - Запустите программу.
+   - Откроется окно авторизации.
+
+2. **Вход в систему**:
+   - Введите ваше имя пользователя и пароль.
+   - Нажмите кнопку "Войти".
+   - После успешного входа в систему откроется главное окно приложения с соответствующим функционалом в зависимости от вашей роли.
+
+#### Функционал по ролям
+
+##### Клиент
+- **Добавление заявки**:
+  1. Заполните поля "Вид оргтехники", "Модель", "Описание проблемы", "ФИО клиента" и "Номер телефона".
+  2. Нажмите кнопку "Добавить заявку".
+  3. Заявка будет добавлена в систему со статусом "Новая заявка".
+
+##### Мастер
+- **Принятие заявки**:
+  1. Введите "Номер заявки".
+  2. Нажмите кнопку "Принять заявку".
+  3. Статус заявки изменится на "В процессе ремонта".
+- **Отклонение заявки**:
+  1. Введите "Номер заявки".
+  2. Нажмите кнопку "Отклонить заявку".
+  3. Статус заявки изменится на "Отклонена".
+
+##### Менеджер
+- **Редактирование заявки**:
+  1. Введите "Номер заявки".
+  2. Заполните поля "Описание проблемы", "Статус" и "Ответственный мастер".
+  3. Нажмите кнопку "Редактировать заявку".
+- **Удаление заявки**:
+  1. Введите "Номер заявки".
+  2. Нажмите кнопку "Удалить заявку".
+- **Изменение статуса заявки**:
+  1. Введите "Номер заявки".
+  2. Введите новый статус в поле "Статус".
+  3. Нажмите кнопку "Изменить статус".
+
+##### Администратор
+- Администратор имеет доступ ко всем вышеописанным функциям.
+
+#### Обновление списка заявок
+- Для обновления списка заявок нажмите кнопку "Обновить".
+
+#### Таблица заявок
+- В главном окне приложения отображается таблица всех заявок с полями "RequestID", "DateAdded", "EquipmentType", "Model", "ProblemDescription", "ClientName", "PhoneNumber", "Status".
+- Используйте функцию обновления для загрузки актуальных данных в таблицу.
+
+---
+
+### Диаграммы UML
+
+#### 1. Диаграмма случаев использования (Use Case Diagram)
+
+```plaintext
+         +---------------------+
+         |   Клиент            |
+         +---------------------+
+                   |
+                   v
+         +---------------------+
+         | Добавить заявку     |
+         +---------------------+
+                   |
+                   v
+         +---------------------+
+         |   Мастер            |
+         +---------------------+
+          |               |
+          v               v
++----------------+ +----------------+
+| Принять заявку | | Отклонить заявку|
++----------------+ +----------------+
+          |
+          v
+    +------------------+
+    |  Менеджер        |
+    +------------------+
+        |        |          |
+        v        v          v
+ +-------------+ +-------------+ +--------------+
+ | Редактировать| | Удалить     | | Изменить     |
+ | заявку       | | заявку      | | статус заявки|
+ +-------------+ +-------------+ +--------------+
+        |
+        v
+ +-------------------+
+ |   Администратор   |
+ +-------------------+
+        |       |        |         |
+        v       v        v         v
++--------------+ +-------------+ +-------------+
+| Добавить     | | Принять     | | Отклонить   |
+| заявку       | | заявку      | | заявку      |
++--------------+ +-------------+ +-------------+
++--------------+ +-------------+ +--------------+
+| Редактировать| | Удалить     | | Изменить     |
+| заявку       | | заявку      | | статус заявки|
++--------------+ +-------------+ +--------------+
+```
+
+#### 2. Диаграмма классов (Class Diagram)
+
+```plaintext
++-------------------+
+|       User        |
++-------------------+
+| - userID: int     |
+| - username: string|
+| - password: string|
+| - role: string    |
++-------------------+
+| + login()         |
++-------------------+
+
++-------------------+
+|     Request       |
++-------------------+
+| - requestID: int  |
+| - dateAdded: datetime|
+| - equipmentType: string|
+| - model: string   |
+| - problemDescription: string|
+| - clientName: string|
+| - phoneNumber: string|
+| - status: string  |
+| - responsibleMaster: string|
++-------------------+
+| + addRequest()    |
+| + editRequest()   |
+| + deleteRequest() |
+| + changeStatus()  |
+| + acceptRequest() |
+| + rejectRequest() |
++-------------------+
+```
+
+"""
+        with open(os.path.join(os.getcwd(), 'PyDBUtils.txt'), 'w') as f:
+            f.write(code)
